@@ -1,0 +1,12 @@
+{
+    "Author": "wah",
+    "Name": "PFRelay",
+    "Description": "A plugin that uses Telegram or a Discord bot to forward Party Finder notifications",
+    "Punchline": "A plugin that uses Telegram or a Discord bot to forward Party Finder notifications",
+    "InternalName": "PFRelay",
+    "AssemblyVersion": "1.0.0.2",
+    "RepoUrl": "https://github.com/Brappp/WahJumps",
+    "ApplicableVersion": "any",
+    "Tags": [ "wah" ],
+    "DalamudApiLevel": 10
+}
