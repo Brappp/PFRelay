@@ -27,9 +27,29 @@ namespace PFRelay.Windows
 
         public void Dispose() { }
 
-        // Discord DM Bot Configuration UI
+        // Draw the General Settings tab for duty pop notifications and AFK status
+        private void DrawGeneralSettings()
+        {
+            var enableForDutyPops = Configuration.EnableForDutyPops;
+            if (ImGui.Checkbox("Enable notifications for duty pops", ref enableForDutyPops))
+            {
+                Configuration.EnableForDutyPops = enableForDutyPops;
+                Configuration.Save();
+            }
+
+            var ignoreAfkStatus = Configuration.IgnoreAfkStatus;
+            if (ImGui.Checkbox("Ignore AFK status and always notify", ref ignoreAfkStatus))
+            {
+                Configuration.IgnoreAfkStatus = ignoreAfkStatus;
+                Configuration.Save();
+            }
+        }
+
+        // Draw the Discord DM Bot settings tab
         private void DrawDiscordDMConfig()
         {
+            ImGui.Text("Discord DM Bot Settings");
+
             var enableDiscordBot = Configuration.EnableDiscordBot;
             if (ImGui.Checkbox("Enable Discord DM Bot", ref enableDiscordBot))
             {
@@ -52,12 +72,18 @@ namespace PFRelay.Windows
 
             var userToken = Configuration.DiscordUserToken;
             if (ImGui.InputText("User Token", ref userToken, 2048u))
+            {
                 Configuration.DiscordUserToken = userToken;
+                Configuration.Save();
+            }
             ImGui.TextWrapped("Paste the Token provided by the bot here.");
 
             var userSecretKey = Configuration.UserSecretKey;
             if (ImGui.InputText("User Secret Key", ref userSecretKey, 2048u))
+            {
                 Configuration.UserSecretKey = userSecretKey;
+                Configuration.Save();
+            }
             ImGui.TextWrapped("Paste the Secret Key provided by the bot here.");
 
             ImGui.TextColored(new Vector4(0.9f, 0.9f, 0.1f, 1.0f), "Remember to save your configuration after entering the Token and Secret Key.");
@@ -66,8 +92,7 @@ namespace PFRelay.Windows
             if (ImGui.Button("Send test Discord DM notification"))
             {
                 notifSentMessageTimerDiscord.Start();
-                plugin.DiscordDMDelivery?.SendTestNotification("Test notification",
-                                                                "If you received this, the Discord DM bot is configured correctly.");
+                plugin.DiscordDMDelivery?.SendTestNotification("Test notification", "If you received this, the Discord DM bot is configured correctly.");
             }
 
             // Show feedback if notification was sent recently
@@ -76,13 +101,13 @@ namespace PFRelay.Windows
                 ImGui.SameLine();
                 ImGui.Text("Discord notification sent!");
             }
-
-            Configuration.Save();
         }
 
-        // Telegram Bot Configuration UI
+        // Draw the Telegram Bot settings tab
         private void DrawTelegramConfig()
         {
+            ImGui.Text("Telegram Bot Settings");
+
             var enableTelegramBot = Configuration.EnableTelegramBot;
             if (ImGui.Checkbox("Enable Telegram Bot", ref enableTelegramBot))
             {
@@ -103,12 +128,18 @@ namespace PFRelay.Windows
 
             var botToken = Configuration.TelegramBotToken;
             if (ImGui.InputText("Bot Token", ref botToken, 2048u))
+            {
                 Configuration.TelegramBotToken = botToken;
+                Configuration.Save();
+            }
             ImGui.TextWrapped("Enter your Telegram bot token.");
 
             var chatId = Configuration.TelegramChatId;
             if (ImGui.InputText("Chat ID", ref chatId, 2048u))
+            {
                 Configuration.TelegramChatId = chatId;
+                Configuration.Save();
+            }
             ImGui.TextWrapped("Enter the chat ID where notifications should be sent.");
 
             // Button to open the Telegram setup guide
@@ -117,14 +148,13 @@ namespace PFRelay.Windows
                 showSetupGuidePopup = true;
             }
 
-            ShowTelegramSetupGuide(); // Call the method to render the popup
+            ShowTelegramSetupGuide();
 
             // Button to send test notification for Telegram
             if (ImGui.Button("Send test Telegram notification"))
             {
                 notifSentMessageTimerTelegram.Start();
-                plugin.TelegramDelivery?.SendTestNotification("Test notification",
-                                                              "If you received this, the Telegram bot is configured correctly.");
+                plugin.TelegramDelivery?.SendTestNotification("Test notification", "If you received this, the Telegram bot is configured correctly.");
             }
 
             // Show feedback if notification was sent recently
@@ -133,11 +163,9 @@ namespace PFRelay.Windows
                 ImGui.SameLine();
                 ImGui.Text("Telegram notification sent!");
             }
-
-            Configuration.Save();
         }
 
-        // Method to show the Telegram setup guide in a popup
+        // Show the Telegram setup guide in a popup
         private void ShowTelegramSetupGuide()
         {
             if (showSetupGuidePopup)
@@ -148,7 +176,6 @@ namespace PFRelay.Windows
             if (ImGui.BeginPopupModal("Telegram Setup Guide", ref showSetupGuidePopup, ImGuiWindowFlags.AlwaysAutoResize))
             {
                 ImGui.TextWrapped("Follow these steps to set up Telegram notifications:");
-
                 ImGui.BulletText("1. Open Telegram and search for the bot named @BotFather.");
                 ImGui.TextWrapped("BotFather is an official bot by Telegram to help you create and manage your own bots.");
 
@@ -180,12 +207,17 @@ namespace PFRelay.Windows
             }
         }
 
+        // Main Draw method to render the configuration window
         public override void Draw()
         {
-            using (var tabBar = ImRaii.TabBar("Services"))
+            using (var tabBar = ImRaii.TabBar("SettingsTabs"))
             {
                 if (tabBar)
                 {
+                    using (var generalTab = ImRaii.TabItem("Settings"))
+                    {
+                        if (generalTab) DrawGeneralSettings();
+                    }
                     using (var discordDMTab = ImRaii.TabItem("Discord DM"))
                     {
                         if (discordDMTab) DrawDiscordDMConfig();
