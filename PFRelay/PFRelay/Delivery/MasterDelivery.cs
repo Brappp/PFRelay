@@ -1,6 +1,6 @@
+using System;
 using System.Collections.Generic;
-using Dalamud.Utility;
-
+using PFRelay.Util; 
 namespace PFRelay.Delivery
 {
     internal interface IDelivery
@@ -17,39 +17,86 @@ namespace PFRelay.Delivery
         {
             _deliveries.Clear();
 
-            // Add only Discord and Telegram deliveries
-            if (Plugin.Configuration.EnableDiscordBot)
+            try
             {
-                var discordDelivery = new DiscordDMDelivery();
-                if (discordDelivery.IsActive)
-                    _deliveries.Add(discordDelivery);
-                Service.PluginLog.Debug("DiscordDMDelivery added to active deliveries.");
-            }
+                // Add only Discord and Telegram deliveries
+                if (Plugin.Configuration.EnableDiscordBot)
+                {
+                    try
+                    {
+                        var discordDelivery = new DiscordDMDelivery();
+                        if (discordDelivery.IsActive)
+                        {
+                            _deliveries.Add(discordDelivery);
+                            LoggerHelper.LogDebug("DiscordDMDelivery added to active deliveries.");
+                        }
+                        else
+                        {
+                            LoggerHelper.LogDebug("DiscordDMDelivery is inactive and was not added.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerHelper.LogError("Error initializing DiscordDMDelivery", ex);
+                    }
+                }
 
-            if (Plugin.Configuration.EnableTelegramBot)
+                if (Plugin.Configuration.EnableTelegramBot)
+                {
+                    try
+                    {
+                        var telegramDelivery = new TelegramDelivery();
+                        if (telegramDelivery.IsActive)
+                        {
+                            _deliveries.Add(telegramDelivery);
+                            LoggerHelper.LogDebug("TelegramDelivery added to active deliveries.");
+                        }
+                        else
+                        {
+                            LoggerHelper.LogDebug("TelegramDelivery is inactive and was not added.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerHelper.LogError("Error initializing TelegramDelivery", ex);
+                    }
+                }
+            }
+            catch (Exception ex)
             {
-                var telegramDelivery = new TelegramDelivery();
-                if (telegramDelivery.IsActive)
-                    _deliveries.Add(telegramDelivery);
-                Service.PluginLog.Debug("TelegramDelivery added to active deliveries.");
+                LoggerHelper.LogError("Error initializing deliveries", ex);
             }
         }
 
         public static void Deliver(string title, string text)
         {
-            InitializeDeliveries(); // Re-initialize deliveries to ensure updated config
-
-            foreach (var delivery in _deliveries)
+            try
             {
-                if (delivery.IsActive)
+                InitializeDeliveries(); 
+
+                foreach (var delivery in _deliveries)
                 {
-                    Service.PluginLog.Debug($"Sending '{title}' to delivery type: {delivery.GetType().Name}");
-                    delivery.Deliver(title, text);
+                    try
+                    {
+                        if (delivery.IsActive)
+                        {
+                            LoggerHelper.LogDebug($"Sending '{title}' to delivery type: {delivery.GetType().Name}");
+                            delivery.Deliver(title, text);
+                        }
+                        else
+                        {
+                            LoggerHelper.LogDebug($"Delivery type {delivery.GetType().Name} is inactive and will not send.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerHelper.LogError($"Error during delivery with {delivery.GetType().Name}", ex);
+                    }
                 }
-                else
-                {
-                    Service.PluginLog.Debug($"Delivery type {delivery.GetType().Name} is inactive and will not send.");
-                }
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error in Deliver method", ex);
             }
         }
     }

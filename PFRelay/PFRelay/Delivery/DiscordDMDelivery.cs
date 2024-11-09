@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Flurl.Http;
-using Dalamud.Utility;
+using PFRelay.Util;
 using System.Net.Http;
 using Newtonsoft.Json.Linq;
 
@@ -23,7 +23,7 @@ namespace PFRelay.Delivery
         {
             if (!IsActive)
             {
-                Service.PluginLog.Error("Discord DM bot is not enabled, or user token/secret key is missing.");
+                LoggerHelper.LogError("Discord DM bot is not enabled, or user token/secret key is missing.", new InvalidOperationException("Discord bot inactive or misconfigured."));
                 return;
             }
 
@@ -35,7 +35,7 @@ namespace PFRelay.Delivery
             if (string.IsNullOrWhiteSpace(Plugin.Configuration.DiscordUserToken) ||
                 string.IsNullOrWhiteSpace(Plugin.Configuration.UserSecretKey))
             {
-                Service.PluginLog.Error("User is not fully configured with the Discord bot. Ensure both the token and secret key are set in the plugin.");
+                LoggerHelper.LogError("User is not fully configured with the Discord bot. Ensure both the token and secret key are set in the plugin.", new ArgumentException("Invalid configuration"));
                 return;
             }
 
@@ -46,7 +46,7 @@ namespace PFRelay.Delivery
             }
             catch (Exception ex)
             {
-                Service.PluginLog.Error($"Failed to sync with NTP server: {ex.Message}");
+                LoggerHelper.LogError("Failed to sync with NTP server", ex);
                 return;
             }
 
@@ -65,87 +65,140 @@ namespace PFRelay.Delivery
             var messageData = $"{Plugin.Configuration.DiscordUserToken}{title}{text}{nonce}{timestamp}";
             args["hash"] = GenerateHmacHash(messageData, Plugin.Configuration.UserSecretKey);
 
-            Service.PluginLog.Debug("Attempting to send data to Discord bot service...");
+            LoggerHelper.LogDebug("Attempting to send data to Discord bot service...");
             try
             {
                 await apiUrl.PostJsonAsync(args);
-                Service.PluginLog.Debug("Data sent successfully to Discord bot service.");
+                LoggerHelper.LogDebug("Data sent successfully to Discord bot service.");
             }
             catch (FlurlHttpException e)
             {
-                Service.PluginLog.Error($"Failed to forward message to Discord bot service: '{e.Message}'");
-                Service.PluginLog.Error($"Status: {e.StatusCode}, Response Body: {await e.GetResponseStringAsync()}");
+                LoggerHelper.LogError("Failed to forward message to Discord bot service", e);
+                LoggerHelper.LogDebug($"Status: {e.StatusCode}, Response Body: {await e.GetResponseStringAsync()}");
             }
             catch (Exception e)
             {
-                Service.PluginLog.Error($"Unexpected error: '{e.Message}'");
-                Service.PluginLog.Error($"{e.StackTrace}");
+                LoggerHelper.LogError("Unexpected error during Discord message delivery", e);
             }
         }
 
-        // Updated method to send a test notification with title and message parameters
         public void SendTestNotification(string title, string message)
         {
-            Deliver(title, message);
+            try
+            {
+                Deliver(title, message);
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error sending test notification", ex);
+            }
         }
 
         private string GenerateHmacHash(string message, string userSecretKey)
         {
-            byte[] key = Encoding.UTF8.GetBytes(userSecretKey);
-            using (var hmac = new HMACSHA256(key))
+            try
             {
-                byte[] messageBytes = Encoding.UTF8.GetBytes(message);
-                byte[] hashBytes = hmac.ComputeHash(messageBytes);
-                return Convert.ToBase64String(hashBytes);
+                byte[] key = Encoding.UTF8.GetBytes(userSecretKey);
+                using (var hmac = new HMACSHA256(key))
+                {
+                    byte[] messageBytes = Encoding.UTF8.GetBytes(message);
+                    byte[] hashBytes = hmac.ComputeHash(messageBytes);
+                    return Convert.ToBase64String(hashBytes);
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error generating HMAC hash", ex);
+                throw;
             }
         }
 
         private async Task<string> GetNtpTimeAsync()
         {
-            using (var client = new HttpClient())
+            try
             {
-                client.Timeout = TimeSpan.FromSeconds(10);
+                // Attempt direct NTP query
+                return NtpTimeFetcher.GetNtpTime();
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Primary NTP query failed, attempting fallback method", ex);
+                return await FallbackNtpTimeAsync(new HttpClient());
+            }
+        }
 
-                HttpResponseMessage response;
+        // Fallback method for HTTP-based time fetch if direct NTP fails
+        private async Task<string> FallbackNtpTimeAsync(HttpClient client)
+        {
+            HttpResponseMessage response;
+            try
+            {
+                response = await client.GetAsync("http://worldclockapi.com/api/json/utc/now");
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Fallback NTP request to worldclockapi.com failed", ex);
+                throw new Exception("Both primary and fallback NTP requests failed.", ex);
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
                 try
-                {
-                    // Updated endpoint
-                    response = await client.GetAsync("http://worldclockapi.com/api/json/utc/now");
-                }
-                catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException)
-                {
-                    throw new Exception("Network error occurred while sending the request to the NTP server.", ex);
-                }
-
-                if (response.IsSuccessStatusCode)
                 {
                     var jsonResponse = JObject.Parse(await response.Content.ReadAsStringAsync());
                     var utcDateTime = DateTimeOffset.Parse(jsonResponse["currentDateTime"].ToString()).ToUnixTimeSeconds();
-                    return utcDateTime.ToString();
+                    return utcDateTime.ToString(); // Ensuring the returned time is in UTC
                 }
-                else
+                catch (Exception ex)
                 {
-                    throw new Exception($"Failed to get NTP time from server. Status code: {response.StatusCode}");
+                    LoggerHelper.LogError("Error parsing response from fallback NTP server", ex);
+                    throw;
                 }
+            }
+            else
+            {
+                LoggerHelper.LogError($"Fallback NTP server response failed with status code: {response.StatusCode}");
+                throw new Exception("Failed to retrieve time from both NTP servers.");
             }
         }
 
         public void StartListening()
         {
-            Service.PluginLog.Debug("DiscordDMDelivery is now listening for requests.");
+            try
+            {
+                LoggerHelper.LogDebug("DiscordDMDelivery is now listening for requests.");
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error starting listening service", ex);
+            }
         }
 
         public void StopListening()
         {
-            Service.PluginLog.Debug("DiscordDMDelivery has stopped listening.");
+            try
+            {
+                LoggerHelper.LogDebug("DiscordDMDelivery has stopped listening.");
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error stopping listening service", ex);
+            }
         }
 
         public void Dispose()
         {
-            if (!disposed)
+            try
             {
-                StopListening();
-                disposed = true;
+                if (!disposed)
+                {
+                    StopListening();
+                    disposed = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error during disposal", ex);
             }
         }
     }

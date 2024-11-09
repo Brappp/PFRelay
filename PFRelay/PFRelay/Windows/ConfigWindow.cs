@@ -12,9 +12,9 @@ namespace PFRelay.Windows
     {
         private readonly Configuration Configuration;
         private readonly Plugin plugin;
-        private readonly TimedBool notifSentMessageTimerDiscord = new(3.0f); // Timer for Discord notification feedback
-        private readonly TimedBool notifSentMessageTimerTelegram = new(3.0f); // Timer for Telegram notification feedback
-        private bool showSetupGuidePopup = false; // Tracks the popup state
+        private readonly TimedBool notifSentMessageTimerDiscord = new(3.0f);
+        private readonly TimedBool notifSentMessageTimerTelegram = new(3.0f);
+        private bool showSetupGuidePopup = false;
 
         public ConfigWindow(Plugin plugin) : base(
             "PFRelay Configuration",
@@ -27,7 +27,6 @@ namespace PFRelay.Windows
 
         public void Dispose() { }
 
-        // Draw the General Settings tab for duty pop notifications and AFK status
         private void DrawGeneralSettings()
         {
             var enableForDutyPops = Configuration.EnableForDutyPops;
@@ -45,7 +44,6 @@ namespace PFRelay.Windows
             }
         }
 
-        // Draw the Discord DM Bot settings tab
         private void DrawDiscordDMConfig()
         {
             ImGui.Text("Discord DM Bot Settings");
@@ -58,12 +56,12 @@ namespace PFRelay.Windows
 
                 if (enableDiscordBot)
                 {
-                    Service.PluginLog.Debug("Starting Discord DM bot...");
+                    LoggerHelper.LogDebug("Starting Discord DM bot...");
                     plugin.StartDiscordBot();
                 }
                 else
                 {
-                    Service.PluginLog.Debug("Stopping Discord DM bot...");
+                    LoggerHelper.LogDebug("Stopping Discord DM bot...");
                     plugin.StopDiscordBot();
                 }
             }
@@ -88,14 +86,12 @@ namespace PFRelay.Windows
 
             ImGui.TextColored(new Vector4(0.9f, 0.9f, 0.1f, 1.0f), "Remember to save your configuration after entering the Token and Secret Key.");
 
-            // Button to send test notification for Discord
             if (ImGui.Button("Send test Discord DM notification"))
             {
                 notifSentMessageTimerDiscord.Start();
                 plugin.DiscordDMDelivery?.SendTestNotification("Test notification", "If you received this, the Discord DM bot is configured correctly.");
             }
 
-            // Show feedback if notification was sent recently
             if (notifSentMessageTimerDiscord.Value)
             {
                 ImGui.SameLine();
@@ -103,7 +99,6 @@ namespace PFRelay.Windows
             }
         }
 
-        // Draw the Telegram Bot settings tab
         private void DrawTelegramConfig()
         {
             ImGui.Text("Telegram Bot Settings");
@@ -116,12 +111,12 @@ namespace PFRelay.Windows
 
                 if (enableTelegramBot)
                 {
-                    Service.PluginLog.Debug("Starting Telegram bot...");
+                    LoggerHelper.LogDebug("Starting Telegram bot...");
                     plugin.StartTelegramBot();
                 }
                 else
                 {
-                    Service.PluginLog.Debug("Stopping Telegram bot...");
+                    LoggerHelper.LogDebug("Stopping Telegram bot...");
                     plugin.StopTelegramBot();
                 }
             }
@@ -142,7 +137,6 @@ namespace PFRelay.Windows
             }
             ImGui.TextWrapped("Enter the chat ID where notifications should be sent.");
 
-            // Button to open the Telegram setup guide
             if (ImGui.Button("Telegram Setup Guide"))
             {
                 showSetupGuidePopup = true;
@@ -150,14 +144,12 @@ namespace PFRelay.Windows
 
             ShowTelegramSetupGuide();
 
-            // Button to send test notification for Telegram
             if (ImGui.Button("Send test Telegram notification"))
             {
                 notifSentMessageTimerTelegram.Start();
                 plugin.TelegramDelivery?.SendTestNotification("Test notification", "If you received this, the Telegram bot is configured correctly.");
             }
 
-            // Show feedback if notification was sent recently
             if (notifSentMessageTimerTelegram.Value)
             {
                 ImGui.SameLine();
@@ -165,7 +157,6 @@ namespace PFRelay.Windows
             }
         }
 
-        // Show the Telegram setup guide in a popup
         private void ShowTelegramSetupGuide()
         {
             if (showSetupGuidePopup)
@@ -207,7 +198,6 @@ namespace PFRelay.Windows
             }
         }
 
-        // Main Draw method to render the configuration window
         public override void Draw()
         {
             using (var tabBar = ImRaii.TabBar("SettingsTabs"))

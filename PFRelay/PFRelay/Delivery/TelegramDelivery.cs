@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Dalamud.Utility;
 using Flurl.Http;
+using PFRelay.Util; // Import LoggerHelper
 
 namespace PFRelay.Delivery
 {
@@ -16,7 +18,14 @@ namespace PFRelay.Delivery
 
         public void Deliver(string title, string text)
         {
-            Task.Run(() => DeliverAsync(title, text));
+            try
+            {
+                Task.Run(() => DeliverAsync(title, text));
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error starting asynchronous delivery task", ex);
+            }
         }
 
         private async void DeliverAsync(string title, string text)
@@ -32,40 +41,63 @@ namespace PFRelay.Delivery
             try
             {
                 await apiUrl.PostJsonAsync(args);
-                Service.PluginLog.Debug("Sent Telegram message");
+                LoggerHelper.LogDebug("Sent Telegram message");
             }
             catch (FlurlHttpException e)
             {
-                Service.PluginLog.Error($"Failed to make Telegram request: '{e.Message}'");
-                Service.PluginLog.Error($"{e.StackTrace}");
-                Service.PluginLog.Debug(JsonSerializer.Serialize(args));
+                LoggerHelper.LogError($"Failed to make Telegram request", e);
+                LoggerHelper.LogDebug(JsonSerializer.Serialize(args));
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Unexpected error during Telegram message delivery", ex);
             }
         }
 
-        // New method to send a test notification
         public void SendTestNotification(string title, string message)
         {
-            Deliver(title, message);
+            try
+            {
+                Deliver(title, message);
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error sending test notification", ex);
+            }
         }
 
         public void StartListening()
         {
             if (!Plugin.Configuration.EnableTelegramBot)
             {
-                Service.PluginLog.Debug("Telegram bot is disabled in configuration.");
+                LoggerHelper.LogDebug("Telegram bot is disabled in configuration.");
                 return;
             }
 
-            Service.PluginLog.Debug("Starting Telegram bot...");
-            Task.Run(async () =>
+            LoggerHelper.LogDebug("Starting Telegram bot...");
+            try
             {
-                while (Plugin.Configuration.EnableTelegramBot)
+                Task.Run(async () =>
                 {
-                    await FetchAndSendChatId();
-                    await Task.Delay(1000);
-                }
-                Service.PluginLog.Debug("Telegram bot polling stopped.");
-            });
+                    while (Plugin.Configuration.EnableTelegramBot)
+                    {
+                        try
+                        {
+                            await FetchAndSendChatId();
+                        }
+                        catch (Exception ex)
+                        {
+                            LoggerHelper.LogError("Error during Telegram bot polling", ex);
+                        }
+                        await Task.Delay(1000);
+                    }
+                    LoggerHelper.LogDebug("Telegram bot polling stopped.");
+                });
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error starting Telegram bot polling", ex);
+            }
         }
 
         private async Task FetchAndSendChatId()
@@ -95,8 +127,11 @@ namespace PFRelay.Delivery
             }
             catch (FlurlHttpException e)
             {
-                Service.PluginLog.Error($"Failed to retrieve or send chat ID: '{e.Message}'");
-                Service.PluginLog.Error($"{e.StackTrace}");
+                LoggerHelper.LogError("Failed to retrieve or send chat ID", e);
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Unexpected error during FetchAndSendChatId", ex);
             }
         }
 
@@ -112,20 +147,30 @@ namespace PFRelay.Delivery
             try
             {
                 await apiUrl.PostJsonAsync(args);
-                Service.PluginLog.Debug("Sent message to Telegram user");
+                LoggerHelper.LogDebug("Sent message to Telegram user");
             }
             catch (FlurlHttpException e)
             {
-                Service.PluginLog.Error($"Failed to send message: '{e.Message}'");
-                Service.PluginLog.Error($"{e.StackTrace}");
+                LoggerHelper.LogError("Failed to send message", e);
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Unexpected error during SendMessage", ex);
             }
         }
 
         public void StopListening()
         {
-            Plugin.Configuration.EnableTelegramBot = false;
-            Plugin.Configuration.Save();
-            Service.PluginLog.Debug("Telegram bot polling stopped.");
+            try
+            {
+                Plugin.Configuration.EnableTelegramBot = false;
+                Plugin.Configuration.Save();
+                LoggerHelper.LogDebug("Telegram bot polling stopped.");
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error stopping Telegram bot", ex);
+            }
         }
     }
 }

@@ -1,49 +1,111 @@
+using System;
 using PFRelay.Delivery;
 using PFRelay.Util;
 
-namespace PFRelay.Impl;
-
-public static class PartyListener
+namespace PFRelay.Impl
 {
-    public static void On()
+    public static class PartyListener
     {
-        Service.PluginLog.Debug("PartyListener On");
-        CrossWorldPartyListSystem.OnJoin += OnJoin;
-        CrossWorldPartyListSystem.OnLeave += OnLeave;
-    }
-
-    public static void Off()
-    {
-        Service.PluginLog.Debug("PartyListener Off");
-        CrossWorldPartyListSystem.OnJoin -= OnJoin;
-        CrossWorldPartyListSystem.OnLeave -= OnLeave;
-    }
-
-    private static void OnJoin(CrossWorldPartyListSystem.CrossWorldMember m)
-    {
-        if (!CharacterUtil.IsClientAfk()) return;
-
-        var jobAbbr = LuminaDataUtil.GetJobAbbreviation(m.JobId);
-
-        if (m.PartyCount == 8)
+        public static void On()
         {
-            MasterDelivery.Deliver("Party full",
-                                   $"{m.Name} (Lv{m.Level} {jobAbbr}) joins the party.\nParty recruitment ended. All spots have been filled.");
+            try
+            {
+                LoggerHelper.LogDebug("PartyListener On");
+                CrossWorldPartyListSystem.OnJoin += OnJoin;
+                CrossWorldPartyListSystem.OnLeave += OnLeave;
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error enabling PartyListener", ex);
+            }
         }
-        else
+
+        public static void Off()
         {
-            MasterDelivery.Deliver($"{m.PartyCount}/8: Party join",
-                                   $"{m.Name} (Lv{m.Level} {jobAbbr}) joins the party.");
+            try
+            {
+                LoggerHelper.LogDebug("PartyListener Off");
+                CrossWorldPartyListSystem.OnJoin -= OnJoin;
+                CrossWorldPartyListSystem.OnLeave -= OnLeave;
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error disabling PartyListener", ex);
+            }
         }
-    }
 
-    private static void OnLeave(CrossWorldPartyListSystem.CrossWorldMember m)
-    {
-        if (!CharacterUtil.IsClientAfk()) return;
+        private static void OnJoin(CrossWorldPartyListSystem.CrossWorldMember m)
+        {
+            try
+            {
+                if (!CharacterUtil.IsClientAfk())
+                {
+                    LoggerHelper.LogDebug("Client is not AFK; no party join notification sent.");
+                    return;
+                }
 
-        var jobAbbr = LuminaDataUtil.GetJobAbbreviation(m.JobId);
+                var jobAbbr = LuminaDataUtil.GetJobAbbreviation(m.JobId);
 
-        MasterDelivery.Deliver($"{m.PartyCount - 1}/8: Party leave",
-                               $"{m.Name} (Lv{m.Level} {jobAbbr}) has left the party.");
+                if (m.PartyCount == 8)
+                {
+                    try
+                    {
+                        MasterDelivery.Deliver("Party full",
+                                               $"{m.Name} (Lv{m.Level} {jobAbbr}) joins the party.\nParty recruitment ended. All spots have been filled.");
+                        LoggerHelper.LogDebug("Party full notification sent successfully.");
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerHelper.LogError("Error delivering party full notification", ex);
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        MasterDelivery.Deliver($"{m.PartyCount}/8: Party join",
+                                               $"{m.Name} (Lv{m.Level} {jobAbbr}) joins the party.");
+                        LoggerHelper.LogDebug("Party join notification sent successfully.");
+                    }
+                    catch (Exception ex)
+                    {
+                        LoggerHelper.LogError("Error delivering party join notification", ex);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error handling OnJoin event", ex);
+            }
+        }
+
+        private static void OnLeave(CrossWorldPartyListSystem.CrossWorldMember m)
+        {
+            try
+            {
+                if (!CharacterUtil.IsClientAfk())
+                {
+                    LoggerHelper.LogDebug("Client is not AFK; no party leave notification sent.");
+                    return;
+                }
+
+                var jobAbbr = LuminaDataUtil.GetJobAbbreviation(m.JobId);
+
+                try
+                {
+                    MasterDelivery.Deliver($"{m.PartyCount - 1}/8: Party leave",
+                                           $"{m.Name} (Lv{m.Level} {jobAbbr}) has left the party.");
+                    LoggerHelper.LogDebug("Party leave notification sent successfully.");
+                }
+                catch (Exception ex)
+                {
+                    LoggerHelper.LogError("Error delivering party leave notification", ex);
+                }
+            }
+            catch (Exception ex)
+            {
+                LoggerHelper.LogError("Error handling OnLeave event", ex);
+            }
+        }
     }
 }
