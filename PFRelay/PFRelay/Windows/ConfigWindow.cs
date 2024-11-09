@@ -4,6 +4,7 @@ using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using ImGuiNET;
 using PFRelay.Delivery;
+using PFRelay.Util;
 
 namespace PFRelay.Windows
 {
@@ -11,6 +12,9 @@ namespace PFRelay.Windows
     {
         private readonly Configuration Configuration;
         private readonly Plugin plugin;
+        private readonly TimedBool notifSentMessageTimerDiscord = new(3.0f); // Timer for Discord notification feedback
+        private readonly TimedBool notifSentMessageTimerTelegram = new(3.0f); // Timer for Telegram notification feedback
+        private bool showSetupGuidePopup = false; // Tracks the popup state
 
         public ConfigWindow(Plugin plugin) : base(
             "PFRelay Configuration",
@@ -35,14 +39,12 @@ namespace PFRelay.Windows
                 if (enableDiscordBot)
                 {
                     Service.PluginLog.Debug("Starting Discord DM bot...");
-                    if (plugin.DiscordDMDelivery == null)
-                        plugin.DiscordDMDelivery = new DiscordDMDelivery();
-                    plugin.DiscordDMDelivery.StartListening();
+                    plugin.StartDiscordBot();
                 }
                 else
                 {
                     Service.PluginLog.Debug("Stopping Discord DM bot...");
-                    plugin.DiscordDMDelivery?.StopListening();
+                    plugin.StopDiscordBot();
                 }
             }
 
@@ -60,6 +62,21 @@ namespace PFRelay.Windows
 
             ImGui.TextColored(new Vector4(0.9f, 0.9f, 0.1f, 1.0f), "Remember to save your configuration after entering the Token and Secret Key.");
 
+            // Button to send test notification for Discord
+            if (ImGui.Button("Send test Discord DM notification"))
+            {
+                notifSentMessageTimerDiscord.Start();
+                plugin.DiscordDMDelivery?.SendTestNotification("Test notification",
+                                                                "If you received this, the Discord DM bot is configured correctly.");
+            }
+
+            // Show feedback if notification was sent recently
+            if (notifSentMessageTimerDiscord.Value)
+            {
+                ImGui.SameLine();
+                ImGui.Text("Discord notification sent!");
+            }
+
             Configuration.Save();
         }
 
@@ -75,14 +92,12 @@ namespace PFRelay.Windows
                 if (enableTelegramBot)
                 {
                     Service.PluginLog.Debug("Starting Telegram bot...");
-                    if (plugin.TelegramDelivery == null)
-                        plugin.TelegramDelivery = new TelegramDelivery();
-                    plugin.TelegramDelivery.StartListening();
+                    plugin.StartTelegramBot();
                 }
                 else
                 {
                     Service.PluginLog.Debug("Stopping Telegram bot...");
-                    plugin.TelegramDelivery?.StopListening();
+                    plugin.StopTelegramBot();
                 }
             }
 
@@ -96,7 +111,73 @@ namespace PFRelay.Windows
                 Configuration.TelegramChatId = chatId;
             ImGui.TextWrapped("Enter the chat ID where notifications should be sent.");
 
+            // Button to open the Telegram setup guide
+            if (ImGui.Button("Telegram Setup Guide"))
+            {
+                showSetupGuidePopup = true;
+            }
+
+            ShowTelegramSetupGuide(); // Call the method to render the popup
+
+            // Button to send test notification for Telegram
+            if (ImGui.Button("Send test Telegram notification"))
+            {
+                notifSentMessageTimerTelegram.Start();
+                plugin.TelegramDelivery?.SendTestNotification("Test notification",
+                                                              "If you received this, the Telegram bot is configured correctly.");
+            }
+
+            // Show feedback if notification was sent recently
+            if (notifSentMessageTimerTelegram.Value)
+            {
+                ImGui.SameLine();
+                ImGui.Text("Telegram notification sent!");
+            }
+
             Configuration.Save();
+        }
+
+        // Method to show the Telegram setup guide in a popup
+        private void ShowTelegramSetupGuide()
+        {
+            if (showSetupGuidePopup)
+            {
+                ImGui.OpenPopup("Telegram Setup Guide");
+            }
+
+            if (ImGui.BeginPopupModal("Telegram Setup Guide", ref showSetupGuidePopup, ImGuiWindowFlags.AlwaysAutoResize))
+            {
+                ImGui.TextWrapped("Follow these steps to set up Telegram notifications:");
+
+                ImGui.BulletText("1. Open Telegram and search for the bot named @BotFather.");
+                ImGui.TextWrapped("BotFather is an official bot by Telegram to help you create and manage your own bots.");
+
+                ImGui.BulletText("2. Start a chat with BotFather and send the command: /newbot.");
+                ImGui.TextWrapped("You will be prompted to enter a name and a username for your bot.");
+
+                ImGui.BulletText("3. Once created, BotFather will provide you with a bot token.");
+                ImGui.TextWrapped("Copy this token; you'll need it in the plugin's configuration under 'Bot Token'.");
+
+                ImGui.BulletText("4. Add your bot to the group where you want to receive notifications.");
+                ImGui.TextWrapped("Make sure the bot has permission to read messages in the group.");
+
+                ImGui.BulletText("5. Retrieve your group chat ID.");
+                ImGui.TextWrapped("To get the chat ID, send any message in the group with the bot added, then click 'Fetch Group Chat ID' in the plugin's configuration.");
+
+                ImGui.BulletText("6. Once you have the Chat ID, paste it into the 'Chat ID' field in the configuration.");
+
+                ImGui.Separator();
+                ImGui.TextWrapped("Need help? Make sure your bot is added to the group and that you have the correct bot token.");
+                ImGui.TextWrapped("If you encounter any errors, check the plugin logs for more information.");
+
+                if (ImGui.Button("Close"))
+                {
+                    showSetupGuidePopup = false;
+                    ImGui.CloseCurrentPopup();
+                }
+
+                ImGui.EndPopup();
+            }
         }
 
         public override void Draw()

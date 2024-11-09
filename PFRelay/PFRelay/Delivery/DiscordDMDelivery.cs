@@ -5,17 +5,15 @@ using System.Text;
 using System.Threading.Tasks;
 using Flurl.Http;
 using Dalamud.Utility;
-using System.Net;
 using System.Net.Http;
-using System.Threading;
 using Newtonsoft.Json.Linq;
 
 namespace PFRelay.Delivery
 {
-    public class DiscordDMDelivery : IDelivery
+    public class DiscordDMDelivery : IDelivery, IDisposable
     {
-        private static readonly string BOT_SERVICE_URL = "https://relay.wahapp.com"; // Local testing URL
-        private static readonly string NTP_SERVER = "pool.ntp.org"; // Default NTP server
+        private static readonly string BOT_SERVICE_URL = "https://relay.wahapp.com";
+        private bool disposed = false;
 
         public bool IsActive => Plugin.Configuration.EnableDiscordBot &&
                                 !string.IsNullOrWhiteSpace(Plugin.Configuration.DiscordUserToken) &&
@@ -41,7 +39,6 @@ namespace PFRelay.Delivery
                 return;
             }
 
-            // Fetch NTP-synced UTC timestamp
             string timestamp;
             try
             {
@@ -54,7 +51,7 @@ namespace PFRelay.Delivery
             }
 
             var apiUrl = $"{BOT_SERVICE_URL}/send";
-            var nonce = Guid.NewGuid().ToString(); // Generate a unique nonce for this request
+            var nonce = Guid.NewGuid().ToString();
 
             var args = new Dictionary<string, string>
             {
@@ -65,7 +62,6 @@ namespace PFRelay.Delivery
                 { "timestamp", timestamp }
             };
 
-            // Concatenate message data for hashing
             var messageData = $"{Plugin.Configuration.DiscordUserToken}{title}{text}{nonce}{timestamp}";
             args["hash"] = GenerateHmacHash(messageData, Plugin.Configuration.UserSecretKey);
 
@@ -87,7 +83,12 @@ namespace PFRelay.Delivery
             }
         }
 
-        // HMAC hash generation with the user-specific secret key
+        // Updated method to send a test notification with title and message parameters
+        public void SendTestNotification(string title, string message)
+        {
+            Deliver(title, message);
+        }
+
         private string GenerateHmacHash(string message, string userSecretKey)
         {
             byte[] key = Encoding.UTF8.GetBytes(userSecretKey);
@@ -104,7 +105,7 @@ namespace PFRelay.Delivery
             using (var client = new HttpClient())
             {
                 client.Timeout = TimeSpan.FromSeconds(5);
-                HttpResponseMessage response = await client.GetAsync($"http://worldtimeapi.org/api/timezone/Etc/UTC");
+                HttpResponseMessage response = await client.GetAsync("http://worldtimeapi.org/api/timezone/Etc/UTC");
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -127,6 +128,15 @@ namespace PFRelay.Delivery
         public void StopListening()
         {
             Service.PluginLog.Debug("DiscordDMDelivery has stopped listening.");
+        }
+
+        public void Dispose()
+        {
+            if (!disposed)
+            {
+                StopListening();
+                disposed = true;
+            }
         }
     }
 }
