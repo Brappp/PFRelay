@@ -104,18 +104,28 @@ namespace PFRelay.Delivery
         {
             using (var client = new HttpClient())
             {
-                client.Timeout = TimeSpan.FromSeconds(5);
-                HttpResponseMessage response = await client.GetAsync("http://worldtimeapi.org/api/timezone/Etc/UTC");
+                client.Timeout = TimeSpan.FromSeconds(10);
+
+                HttpResponseMessage response;
+                try
+                {
+                    // Updated endpoint
+                    response = await client.GetAsync("http://worldclockapi.com/api/json/utc/now");
+                }
+                catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException)
+                {
+                    throw new Exception("Network error occurred while sending the request to the NTP server.", ex);
+                }
 
                 if (response.IsSuccessStatusCode)
                 {
                     var jsonResponse = JObject.Parse(await response.Content.ReadAsStringAsync());
-                    var utcDateTime = DateTimeOffset.Parse(jsonResponse["utc_datetime"].ToString()).ToUnixTimeSeconds();
+                    var utcDateTime = DateTimeOffset.Parse(jsonResponse["currentDateTime"].ToString()).ToUnixTimeSeconds();
                     return utcDateTime.ToString();
                 }
                 else
                 {
-                    throw new Exception("Failed to get NTP time from server.");
+                    throw new Exception($"Failed to get NTP time from server. Status code: {response.StatusCode}");
                 }
             }
         }
