@@ -4,8 +4,7 @@ using System.Linq;
 using Dalamud.Memory;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI.Info;
-using PFRelay.Util; // Import LoggerHelper
-
+using PFRelay.Util; 
 namespace PFRelay.Util
 {
     public static class CrossWorldPartyListSystem
@@ -19,8 +18,8 @@ namespace PFRelay.Util
         public static event CrossWorldJoinDelegate? OnJoin;
         public static event CrossWorldLeaveDelegate? OnLeave;
 
-        private static DateTime nextStatusLogTime = DateTime.MinValue; // Timestamp for next allowed status log
-        private const int StatusLogCooldownSeconds = 30; // Cooldown period for status logs
+        private static DateTime nextStatusLogTime = DateTime.MinValue; 
+        private const int StatusLogCooldownSeconds = 30;
 
         public static void Start()
         {

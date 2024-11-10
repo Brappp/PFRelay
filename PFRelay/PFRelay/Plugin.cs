@@ -51,6 +51,7 @@ namespace PFRelay
                 PluginInterface.UiBuilder.OpenConfigUi += DrawConfigUI;
                 PluginInterface.UiBuilder.OpenMainUi += OpenMainUi;
 
+                // Start bots if they are enabled in the configuration
                 if (Configuration.EnableDiscordBot) StartDiscordBot();
                 if (Configuration.EnableTelegramBot) StartTelegramBot();
 
@@ -84,6 +85,7 @@ namespace PFRelay
 
                 CommandManager.RemoveHandler(CommandName);
 
+                // Stop and save bot states on disposal
                 if (Configuration.EnableTelegramBot)
                 {
                     StopTelegramBot();

@@ -36,7 +36,6 @@ namespace PFRelay
 
         public void Initialize(IDalamudPluginInterface pluginInterface)
         {
-            // Ensure directory exists
             Directory.CreateDirectory(Path.GetDirectoryName(ConfigFilePath)!);
         }
 
