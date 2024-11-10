@@ -1,11 +1,11 @@
 using System;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
-using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using PFRelay.Delivery;
 using PFRelay.Impl;
+using PFRelay.IPC;
 using PFRelay.Util;
 using PFRelay.Windows;
 
@@ -14,10 +14,7 @@ namespace PFRelay
     public sealed class Plugin : IDalamudPlugin
     {
         public string Name => "PFRelay";
-        private const string CommandName = "/PFRelay";
-
-        private IDalamudPluginInterface PluginInterface { get; init; }
-        private ICommandManager CommandManager { get; init; }
+        private const string CommandName = "/pfrelay";
 
         public static Configuration Configuration { get; private set; }
         public TelegramDelivery? TelegramDelivery { get; set; }
@@ -30,29 +27,48 @@ namespace PFRelay
         {
             try
             {
+                // Initialize Dalamud services first
                 pluginInterface.Create<Service>();
 
-                PluginInterface = pluginInterface;
-                CommandManager = commandManager;
-
-                // Load configuration explicitly from file
+                // Load configuration explicitly
                 Configuration = Configuration.Load();
-                Configuration.Initialize(PluginInterface);
+                Configuration.Initialize(Service.PluginInterface);
 
+                // Logging after services are ready
+                LoggerHelper.LogDebug("PFRelay Plugin constructor called.");
+
+                // Set up UI and commands
                 ConfigWindow = new ConfigWindow(this);
                 WindowSystem.AddWindow(ConfigWindow);
 
-                CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
+                Service.CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
                 {
                     HelpMessage = "Opens the configuration window."
                 });
 
-                PluginInterface.UiBuilder.Draw += DrawUI;
-                PluginInterface.UiBuilder.OpenConfigUi += DrawConfigUI;
-                PluginInterface.UiBuilder.OpenMainUi += OpenMainUi;
+                Service.PluginInterface.UiBuilder.Draw += DrawUI;
+                Service.PluginInterface.UiBuilder.OpenConfigUi += DrawConfigUI;
+                Service.PluginInterface.UiBuilder.OpenMainUi += OpenMainUi;
 
-                // Start bots if they are enabled in the configuration
-                if (Configuration.EnableDiscordBot) StartDiscordBot();
+                // Temporarily ensure DiscordBot is enabled for testing
+                Configuration.EnableDiscordBot = true;
+
+                if (Configuration.EnableDiscordBot)
+                {
+                    LoggerHelper.LogDebug("Starting Discord bot in PFRelay Plugin constructor.");
+                    StartDiscordBot();
+
+                    if (DiscordDMDelivery != null)
+                    {
+                        LoggerHelper.LogDebug("Initializing IPC in PFRelay Plugin constructor.");
+                        PFRelayIpcHelper.Initialize(Service.PluginInterface, DiscordDMDelivery);
+                    }
+                    else
+                    {
+                        LoggerHelper.LogError("DiscordDMDelivery is null in Plugin constructor.");
+                    }
+                }
+
                 if (Configuration.EnableTelegramBot) StartTelegramBot();
 
                 CrossWorldPartyListSystem.Start();
@@ -72,9 +88,9 @@ namespace PFRelay
         {
             try
             {
-                PluginInterface.UiBuilder.OpenMainUi -= OpenMainUi;
-                PluginInterface.UiBuilder.Draw -= DrawUI;
-                PluginInterface.UiBuilder.OpenConfigUi -= DrawConfigUI;
+                Service.PluginInterface.UiBuilder.OpenMainUi -= OpenMainUi;
+                Service.PluginInterface.UiBuilder.Draw -= DrawUI;
+                Service.PluginInterface.UiBuilder.OpenConfigUi -= DrawConfigUI;
 
                 WindowSystem.RemoveAllWindows();
                 ConfigWindow.Dispose();
@@ -83,20 +99,21 @@ namespace PFRelay
                 PartyListener.Off();
                 DutyListener.Off();
 
-                CommandManager.RemoveHandler(CommandName);
+                Service.CommandManager.RemoveHandler(CommandName);
 
-                // Stop and save bot states on disposal
-                if (Configuration.EnableTelegramBot)
-                {
-                    StopTelegramBot();
-                    Configuration.EnableTelegramBot = false;
-                    Configuration.Save();
-                }
-
+                PFRelayIpcHelper.Dispose();
+                DiscordDMDelivery?.Dispose();
                 if (Configuration.EnableDiscordBot)
                 {
                     StopDiscordBot();
                     Configuration.EnableDiscordBot = false;
+                    Configuration.Save();
+                }
+
+                if (Configuration.EnableTelegramBot)
+                {
+                    StopTelegramBot();
+                    Configuration.EnableTelegramBot = false;
                     Configuration.Save();
                 }
 
@@ -110,7 +127,18 @@ namespace PFRelay
 
         public void OpenMainUi() => ConfigWindow.IsOpen = true;
 
-        private void OnCommand(string command, string args) => ConfigWindow.IsOpen = true;
+        private void OnCommand(string command, string args)
+        {
+            if (args == "testipc")
+            {
+                DiscordDMDelivery?.SendCustomMessage("Test Title", "Test Message from PFRelay Command");
+                LoggerHelper.LogError("Sent test IPC message to Discord via PFRelay.");
+            }
+            else
+            {
+                ConfigWindow.IsOpen = true;
+            }
+        }
 
         private void DrawUI() => WindowSystem.Draw();
 
@@ -120,12 +148,12 @@ namespace PFRelay
         {
             try
             {
-                if (DiscordDMDelivery == null) DiscordDMDelivery = new DiscordDMDelivery();
-                if (!DiscordDMDelivery.IsActive)
+                if (DiscordDMDelivery == null)
                 {
-                    DiscordDMDelivery.StartListening();
-                    LoggerHelper.LogDebug("Discord DM bot started.");
+                    LoggerHelper.LogDebug("Creating new DiscordDMDelivery instance.");
+                    DiscordDMDelivery = new DiscordDMDelivery();
                 }
+                LoggerHelper.LogDebug("Discord DM bot setup completed.");
             }
             catch (Exception ex)
             {
@@ -137,9 +165,8 @@ namespace PFRelay
         {
             try
             {
-                if (DiscordDMDelivery?.IsActive == true)
+                if (DiscordDMDelivery != null)
                 {
-                    DiscordDMDelivery.StopListening();
                     LoggerHelper.LogDebug("Discord DM bot stopped.");
                 }
             }
@@ -154,11 +181,7 @@ namespace PFRelay
             try
             {
                 if (TelegramDelivery == null) TelegramDelivery = new TelegramDelivery();
-                if (!TelegramDelivery.IsActive)
-                {
-                    TelegramDelivery.StartListening();
-                    LoggerHelper.LogDebug("Telegram bot started.");
-                }
+                LoggerHelper.LogDebug("Telegram bot started.");
             }
             catch (Exception ex)
             {
@@ -170,9 +193,8 @@ namespace PFRelay
         {
             try
             {
-                if (TelegramDelivery?.IsActive == true)
+                if (TelegramDelivery != null)
                 {
-                    TelegramDelivery.StopListening();
                     LoggerHelper.LogDebug("Telegram bot stopped.");
                 }
             }

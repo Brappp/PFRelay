@@ -13,17 +13,39 @@ namespace PFRelay.Delivery
     public class DiscordDMDelivery : IDelivery, IDisposable
     {
         private static readonly string BOT_SERVICE_URL = "https://relay.wahapp.com";
+        private const int DiscordCharacterLimit = 2000; // Discord DM character limit
         private bool disposed = false;
 
         public bool IsActive => Plugin.Configuration.EnableDiscordBot &&
                                 !string.IsNullOrWhiteSpace(Plugin.Configuration.DiscordUserToken) &&
                                 !string.IsNullOrWhiteSpace(Plugin.Configuration.UserSecretKey);
 
+        // Handles custom IPC messages received from other plugins
+        public void SendCustomMessage(string title, string message)
+        {
+            if (!IsActive)
+            {
+                LoggerHelper.LogError("Discord DM bot is inactive or misconfigured; cannot send message.");
+                return;
+            }
+
+            LoggerHelper.LogDebug($"IPC Received - Title: {title}, Message: {message}");
+
+            // Ensure message length is within the Discord character limit
+            if (message.Length > DiscordCharacterLimit)
+            {
+                LoggerHelper.LogError($"Message exceeds Discord character limit of {DiscordCharacterLimit} characters. Message not sent.");
+                return;
+            }
+
+            Deliver(title, message); // Send message if within character limit
+        }
+
         public void Deliver(string title, string text)
         {
             if (!IsActive)
             {
-                LoggerHelper.LogError("Discord DM bot is not enabled, or user token/secret key is missing.", new InvalidOperationException("Discord bot inactive or misconfigured."));
+                LoggerHelper.LogError("Discord DM bot is not enabled or misconfigured.");
                 return;
             }
 
@@ -35,7 +57,7 @@ namespace PFRelay.Delivery
             if (string.IsNullOrWhiteSpace(Plugin.Configuration.DiscordUserToken) ||
                 string.IsNullOrWhiteSpace(Plugin.Configuration.UserSecretKey))
             {
-                LoggerHelper.LogError("User is not fully configured with the Discord bot. Ensure both the token and secret key are set in the plugin.", new ArgumentException("Invalid configuration"));
+                LoggerHelper.LogError("User token or secret key is missing for Discord bot.");
                 return;
             }
 
@@ -82,34 +104,33 @@ namespace PFRelay.Delivery
             }
         }
 
-        public void SendTestNotification(string title, string message)
+        public void SendTestNotification(string title = "Test Notification", string message = "This is a test notification to Discord.")
         {
-            try
+            if (!IsActive)
             {
-                Deliver(title, message);
+                LoggerHelper.LogError("Cannot send test notification. Discord DM bot is inactive or misconfigured.");
+                return;
             }
-            catch (Exception ex)
+
+            // Ensure message length is within the Discord character limit
+            if (message.Length > DiscordCharacterLimit)
             {
-                LoggerHelper.LogError("Error sending test notification", ex);
+                LoggerHelper.LogError($"Test message exceeds Discord character limit of {DiscordCharacterLimit} characters. Test message not sent.");
+                return;
             }
+
+            Deliver(title, message); // Send message if within character limit
+            LoggerHelper.LogDebug("Test notification sent to Discord bot.");
         }
 
         private string GenerateHmacHash(string message, string userSecretKey)
         {
-            try
+            byte[] key = Encoding.UTF8.GetBytes(userSecretKey);
+            using (var hmac = new HMACSHA256(key))
             {
-                byte[] key = Encoding.UTF8.GetBytes(userSecretKey);
-                using (var hmac = new HMACSHA256(key))
-                {
-                    byte[] messageBytes = Encoding.UTF8.GetBytes(message);
-                    byte[] hashBytes = hmac.ComputeHash(messageBytes);
-                    return Convert.ToBase64String(hashBytes);
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerHelper.LogError("Error generating HMAC hash", ex);
-                throw;
+                byte[] messageBytes = Encoding.UTF8.GetBytes(message);
+                byte[] hashBytes = hmac.ComputeHash(messageBytes);
+                return Convert.ToBase64String(hashBytes);
             }
         }
 
@@ -117,7 +138,6 @@ namespace PFRelay.Delivery
         {
             try
             {
-                // Attempt direct NTP query
                 return NtpTimeFetcher.GetNtpTime();
             }
             catch (Exception ex)
@@ -127,7 +147,6 @@ namespace PFRelay.Delivery
             }
         }
 
-        // Fallback method for HTTP-based time fetch if direct NTP fails
         private async Task<string> FallbackNtpTimeAsync(HttpClient client)
         {
             HttpResponseMessage response;
@@ -137,68 +156,28 @@ namespace PFRelay.Delivery
             }
             catch (Exception ex)
             {
-                LoggerHelper.LogError("Fallback NTP request to worldclockapi.com failed", ex);
+                LoggerHelper.LogError("Fallback NTP request failed", ex);
                 throw new Exception("Both primary and fallback NTP requests failed.", ex);
             }
 
             if (response.IsSuccessStatusCode)
             {
-                try
-                {
-                    var jsonResponse = JObject.Parse(await response.Content.ReadAsStringAsync());
-                    var utcDateTime = DateTimeOffset.Parse(jsonResponse["currentDateTime"].ToString()).ToUnixTimeSeconds();
-                    return utcDateTime.ToString(); // Ensuring the returned time is in UTC
-                }
-                catch (Exception ex)
-                {
-                    LoggerHelper.LogError("Error parsing response from fallback NTP server", ex);
-                    throw;
-                }
+                var jsonResponse = JObject.Parse(await response.Content.ReadAsStringAsync());
+                var utcDateTime = DateTimeOffset.Parse(jsonResponse["currentDateTime"].ToString()).ToUnixTimeSeconds();
+                return utcDateTime.ToString();
             }
             else
             {
-                LoggerHelper.LogError($"Fallback NTP server response failed with status code: {response.StatusCode}");
                 throw new Exception("Failed to retrieve time from both NTP servers.");
-            }
-        }
-
-        public void StartListening()
-        {
-            try
-            {
-                LoggerHelper.LogDebug("DiscordDMDelivery is now listening for requests.");
-            }
-            catch (Exception ex)
-            {
-                LoggerHelper.LogError("Error starting listening service", ex);
-            }
-        }
-
-        public void StopListening()
-        {
-            try
-            {
-                LoggerHelper.LogDebug("DiscordDMDelivery has stopped listening.");
-            }
-            catch (Exception ex)
-            {
-                LoggerHelper.LogError("Error stopping listening service", ex);
             }
         }
 
         public void Dispose()
         {
-            try
+            if (!disposed)
             {
-                if (!disposed)
-                {
-                    StopListening();
-                    disposed = true;
-                }
-            }
-            catch (Exception ex)
-            {
-                LoggerHelper.LogError("Error during disposal", ex);
+                disposed = true;
+                LoggerHelper.LogDebug("Disposed of DiscordDMDelivery.");
             }
         }
     }
