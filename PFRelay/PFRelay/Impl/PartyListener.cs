@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 using PFRelay.Delivery;
 using PFRelay.Util;
 
@@ -6,13 +9,19 @@ namespace PFRelay.Impl
 {
     public static class PartyListener
     {
+        private static List<CrossWorldPartyListSystem.CrossWorldMember> recentJoins = new();
+        private static DateTime lastBatchTime = DateTime.Now;
+        private static readonly TimeSpan batchInterval = TimeSpan.FromSeconds(5);
+        private static bool joinBatchScheduled = false;
+        private static bool isDeliveringBatch = false;
+
         public static void On()
         {
             try
             {
                 LoggerHelper.LogDebug("PartyListener On");
-                CrossWorldPartyListSystem.OnJoin += OnJoin;
-                CrossWorldPartyListSystem.OnLeave += OnLeave;
+                CrossWorldPartyListSystem.OnJoin += HandleOnJoin;
+                CrossWorldPartyListSystem.OnLeave += HandleOnLeave;
             }
             catch (Exception ex)
             {
@@ -25,8 +34,8 @@ namespace PFRelay.Impl
             try
             {
                 LoggerHelper.LogDebug("PartyListener Off");
-                CrossWorldPartyListSystem.OnJoin -= OnJoin;
-                CrossWorldPartyListSystem.OnLeave -= OnLeave;
+                CrossWorldPartyListSystem.OnJoin -= HandleOnJoin;
+                CrossWorldPartyListSystem.OnLeave -= HandleOnLeave;
             }
             catch (Exception ex)
             {
@@ -34,77 +43,90 @@ namespace PFRelay.Impl
             }
         }
 
-        private static void OnJoin(CrossWorldPartyListSystem.CrossWorldMember m)
+        private static void HandleOnJoin(CrossWorldPartyListSystem.CrossWorldMember member)
         {
-            try
+            if (isDeliveringBatch)
             {
-                if (!CharacterUtil.IsClientAfk())
-                {
-                    LoggerHelper.LogDebug("Client is not AFK; no party join notification sent.");
-                    return;
-                }
-
-                var jobAbbr = LuminaDataUtil.GetJobAbbreviation(m.JobId);
-
-                if (m.PartyCount == 8)
-                {
-                    try
-                    {
-                        MasterDelivery.Deliver("Party full",
-                                               $"{m.Name} (Lv{m.Level} {jobAbbr}) joins the party.\nParty recruitment ended. All spots have been filled.");
-                        LoggerHelper.LogDebug("Party full notification sent successfully.");
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerHelper.LogError("Error delivering party full notification", ex);
-                    }
-                }
-                else
-                {
-                    try
-                    {
-                        MasterDelivery.Deliver($"{m.PartyCount}/8: Party join",
-                                               $"{m.Name} (Lv{m.Level} {jobAbbr}) joins the party.");
-                        LoggerHelper.LogDebug("Party join notification sent successfully.");
-                    }
-                    catch (Exception ex)
-                    {
-                        LoggerHelper.LogError("Error delivering party join notification", ex);
-                    }
-                }
+                recentJoins.Add(member);
+                RescheduleBatchDelivery();
+                return;
             }
-            catch (Exception ex)
+
+            recentJoins.Add(member);
+
+            if (!joinBatchScheduled)
             {
-                LoggerHelper.LogError("Error handling OnJoin event", ex);
+                joinBatchScheduled = true;
+                Task.Delay(batchInterval).ContinueWith(_ => DeliverJoinBatch());
             }
         }
 
-        private static void OnLeave(CrossWorldPartyListSystem.CrossWorldMember m)
+        private static void HandleOnLeave(CrossWorldPartyListSystem.CrossWorldMember member)
         {
-            try
+            DeliverSingleEvent($"{member.PartyCount - 1}/8: Party leave",
+                               $"{member.Name} (Lv{member.Level} {LuminaDataUtil.GetJobAbbreviation(member.JobId)}) has left the party.");
+        }
+
+        private static void DeliverJoinBatch()
+        {
+            if (isDeliveringBatch || recentJoins.Count == 0) return;
+
+            isDeliveringBatch = true; 
+
+            if (!CharacterUtil.IsClientAfk())
             {
-                if (!CharacterUtil.IsClientAfk())
-                {
-                    LoggerHelper.LogDebug("Client is not AFK; no party leave notification sent.");
-                    return;
-                }
-
-                var jobAbbr = LuminaDataUtil.GetJobAbbreviation(m.JobId);
-
-                try
-                {
-                    MasterDelivery.Deliver($"{m.PartyCount - 1}/8: Party leave",
-                                           $"{m.Name} (Lv{m.Level} {jobAbbr}) has left the party.");
-                    LoggerHelper.LogDebug("Party leave notification sent successfully.");
-                }
-                catch (Exception ex)
-                {
-                    LoggerHelper.LogError("Error delivering party leave notification", ex);
-                }
+                LoggerHelper.LogDebug("Client is not AFK; no join notification sent.");
+                recentJoins.Clear();
+                isDeliveringBatch = false;
+                joinBatchScheduled = false; 
+                return;
             }
-            catch (Exception ex)
+
+            var message = FormatJoinMessage(recentJoins);
+
+            MasterDelivery.Deliver("Party Join Update", message);
+            LoggerHelper.LogDebug("Party join batch notification sent.");
+
+            recentJoins.Clear();
+            lastBatchTime = DateTime.Now;
+
+            isDeliveringBatch = false; 
+            joinBatchScheduled = false; 
+
+            if (recentJoins.Count > 0)
             {
-                LoggerHelper.LogError("Error handling OnLeave event", ex);
+                RescheduleBatchDelivery();
+            }
+        }
+
+        private static void RescheduleBatchDelivery()
+        {
+            if (!joinBatchScheduled)
+            {
+                joinBatchScheduled = true;
+                Task.Delay(batchInterval).ContinueWith(_ => DeliverJoinBatch());
+            }
+        }
+
+        private static string FormatJoinMessage(List<CrossWorldPartyListSystem.CrossWorldMember> members)
+        {
+            var formattedMembers = members
+                .Select(m => $"• **{m.Name}** (Lv{m.Level} **{LuminaDataUtil.GetJobAbbreviation(m.JobId)}**)")
+                .ToList();
+
+            return "The following members have joined the party:\n" + string.Join("\n", formattedMembers);
+        }
+
+        private static void DeliverSingleEvent(string title, string message)
+        {
+            if (CharacterUtil.IsClientAfk())
+            {
+                MasterDelivery.Deliver(title, message);
+                LoggerHelper.LogDebug($"{title} notification sent successfully.");
+            }
+            else
+            {
+                LoggerHelper.LogDebug("Client is not AFK; no leave or duty pop notification sent.");
             }
         }
     }
